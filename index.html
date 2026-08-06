@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Medication Manager</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1f3a5f">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<style>
+:root{
+  --bg:#f3f5f7;--panel:#fff;--text:#1f2937;--muted:#6b7280;--border:#d1d5db;
+  --accent:#245c9f;--accent2:#eaf1fb;--danger:#b91c1c;--warn:#b45309;--ok:#047857
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,Helvetica,sans-serif;background:var(--bg);color:var(--text)}
+header{background:#1f3a5f;color:#fff;padding:18px 22px}
+header h1{margin:0;font-size:1.45rem}
+header p{margin:6px 0 0;color:#dbeafe;font-size:.92rem}
+main{max-width:1180px;margin:0 auto;padding:18px}
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:16px}
+.panel h2{margin:0 0 12px;font-size:1.12rem}
+.summary{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+.stat{border:1px solid var(--border);border-radius:10px;padding:12px;background:#fff}
+.stat strong{display:block;font-size:1.5rem;margin-top:3px}
+.overdue{border-left:6px solid var(--danger)} .today{border-left:6px solid var(--warn)}
+.soon{border-left:6px solid #ca8a04}.current{border-left:6px solid var(--ok)}
+.reminder-list{display:grid;gap:8px}
+.reminder-item{display:grid;grid-template-columns:1.2fr 1.4fr .9fr auto;gap:10px;align-items:center;border:1px solid var(--border);border-radius:10px;padding:10px}
+.badge{display:inline-block;border-radius:999px;padding:4px 8px;font-size:.78rem;font-weight:bold}
+.badge-overdue{background:#fee2e2;color:#991b1b}.badge-today{background:#ffedd5;color:#9a3412}.badge-soon{background:#fef9c3;color:#854d0e}
+.tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.tab{background:#e5e7eb;color:#111827}
+.tab.active{background:var(--accent);color:#fff}
+.form-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+label{display:block;font-size:.85rem;font-weight:bold;color:#374151}
+input,select,textarea,button{font:inherit}
+input,select,textarea{width:100%;margin-top:5px;border:1px solid var(--border);border-radius:8px;padding:9px;background:#fff}
+textarea{min-height:74px;resize:vertical}
+.readonly{background:#f3f4f6}
+.span-2{grid-column:span 2}.span-4{grid-column:span 4}
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+button{border:0;border-radius:8px;padding:9px 13px;cursor:pointer}
+.primary{background:var(--accent);color:#fff}.secondary{background:#e5e7eb;color:#111827}
+.danger{background:#fee2e2;color:#991b1b}.success{background:#d1fae5;color:#065f46}
+.toolbar{display:flex;gap:10px;align-items:end;flex-wrap:wrap}
+.toolbar>div{min-width:180px;flex:1}
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;margin-top:12px;min-width:980px}
+th,td{border-bottom:1px solid var(--border);text-align:left;padding:9px;font-size:.9rem;vertical-align:top}
+th{background:#f9fafb}
+tr.due-overdue{background:#fff5f5}tr.due-today{background:#fffaf0}tr.due-soon{background:#fffdea}
+.small{font-size:.82rem;color:var(--muted)}
+.empty{padding:14px;color:var(--muted);text-align:center;border:1px dashed var(--border);border-radius:10px}
+.info-strip{background:var(--accent2);border:1px solid #cbdcf3;border-radius:10px;padding:10px;margin-top:12px}
+.log-panel{margin-top:14px;border-top:1px solid var(--border);padding-top:14px}
+.log-entry{border:1px solid var(--border);border-radius:9px;padding:10px;margin-top:8px;background:#fafafa}
+.log-entry-header{display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:5px}
+.log-text{white-space:pre-wrap;word-break:break-word}
+.log-compose{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:end}
+.log-compose textarea{min-height:72px}
+.hidden{display:none}
+footer{max-width:1180px;margin:0 auto 25px;padding:0 18px;color:var(--muted);font-size:.8rem}
+@media(max-width:850px){
+  .summary{grid-template-columns:repeat(2,1fr)}
+  .form-grid{grid-template-columns:1fr 1fr}
+  .span-4{grid-column:span 2}
+  .reminder-item{grid-template-columns:1fr}
+}
+@media(max-width:520px){
+  .form-grid{grid-template-columns:1fr}
+  .span-2,.span-4{grid-column:span 1}
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>Medication Order Reminder</h1>
+  <p>Residents entered once • Tracks ordering through delivery • Local browser storage</p>
+</header>
+
+<main>
+<section class="panel">
+  <h2>Reminders</h2>
+  <div class="summary">
+    <div class="stat overdue"><span>Refill overdue</span><strong id="countOverdue">0</strong></div>
+    <div class="stat today"><span>Refill due today</span><strong id="countToday">0</strong></div>
+    <div class="stat soon"><span>Refill due in 7 days</span><strong id="countSoon">0</strong></div>
+    <div class="stat current"><span>Orders to follow up</span><strong id="countFollowup">0</strong></div>
+  </div>
+  <h3 style="margin:8px 0">Order follow-up</h3>
+  <div id="followupList" class="reminder-list"></div>
+  <h3 style="margin:16px 0 8px">Upcoming refill reminders</h3>
+  <div id="reminderList" class="reminder-list"></div>
+</section>
+
+<section class="panel">
+  <div class="tabs">
+    <button class="tab active" id="residentTabBtn" type="button">Residents</button>
+    <button class="tab" id="medTabBtn" type="button">Medications</button>
+  </div>
+
+  <div id="residentTab">
+    <h2 id="residentFormTitle">Add resident</h2>
+    <div class="form-grid">
+      <label>Patient name
+        <input id="residentName" autocomplete="off">
+      </label>
+      <label>Date of birth
+        <input id="residentDob" type="date">
+      </label>
+      <label>Default pharmacy
+        <input id="residentPharmacy" autocomplete="off">
+      </label>
+      <label>Pharmacy phone
+        <input id="residentPhone" type="tel" autocomplete="off">
+      </label>
+      <label class="span-4">Resident notes
+        <textarea id="residentNotes" placeholder="Optional"></textarea>
+      </label>
+    </div>
+    <div class="actions">
+      <button class="primary" id="saveResidentBtn" type="button">Save resident</button>
+      <button class="secondary" id="clearResidentBtn" type="button">Clear form</button>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Patient</th><th>DOB</th><th>Default pharmacy</th><th>Phone</th><th>Notes</th><th>Actions</th></tr>
+        </thead>
+        <tbody id="residentTableBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div id="medTab" class="hidden">
+    <h2 id="medFormTitle">Add medication</h2>
+    <div class="form-grid">
+      <label>Patient
+        <select id="patientSelect"></select>
+      </label>
+      <label>Date of birth
+        <input id="medDob" class="readonly" readonly>
+      </label>
+      <label>Pharmacy
+        <input id="medPharmacy" class="readonly" readonly>
+      </label>
+      <label>Pharmacy phone
+        <input id="medPhone" class="readonly" readonly>
+      </label>
+      <label>Medication
+        <input id="medication" autocomplete="off">
+      </label>
+      <label>Rx number
+        <input id="rxNumber" autocomplete="off">
+      </label>
+      <label>Last delivered date
+        <input id="lastOrderDate" type="date">
+      </label>
+      <label>Remind after delivery (days)
+        <input id="reminderDays" type="number" min="1" value="25">
+      </label>
+      <label>Order placed date
+        <input id="orderPlacedDate" type="date">
+      </label>
+      <label>Follow-up date
+        <input id="followUpDate" type="date">
+      </label>
+      <label>Days supply
+        <input id="daysSupply" type="number" min="1" placeholder="30">
+      </label>
+      <label>Status
+        <select id="status">
+          <option value="Active">Ready for next refill cycle</option>
+          <option value="Ordered">Ordered</option>
+          <option value="In progress">In progress</option>
+          <option value="Insurance issue">Insurance issue</option>
+          <option value="Ready for pickup">Ready for pickup</option>
+          <option value="Inactive">Inactive</option>
+        </select>
+      </label>
+      <label class="span-2">Notes
+        <textarea id="medNotes" placeholder="Example: Pharmacy said call again after August 20."></textarea>
+      </label>
+    </div>
+    <div class="info-strip" id="patientInfo">Select a resident to automatically fill DOB and pharmacy information.</div>
+    <div class="actions">
+      <button class="primary" id="saveMedBtn" type="button">Save medication</button>
+      <button class="secondary" id="clearMedBtn" type="button">Clear form</button>
+    </div>
+
+    <div id="callLogPanel" class="log-panel hidden">
+      <h3 style="margin:0 0 8px">Call log</h3>
+      <div class="log-compose">
+        <label>New log entry
+          <textarea id="callLogText" placeholder="Example: Called CVS. Insurance rejected; pharmacy will send PA request to provider."></textarea>
+        </label>
+        <button class="primary" id="addCallLogBtn" type="button">Add log</button>
+      </div>
+      <div id="callLogList"></div>
+    </div>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>All medications</h2>
+  <div class="toolbar">
+    <div><label>Search<input id="searchInput" placeholder="Patient, medication, Rx, pharmacy..."></label></div>
+    <div><label>Filter
+      <select id="filterSelect">
+        <option value="all">All records</option>
+        <option value="due">Due or overdue</option>
+        <option value="soon">Due within 7 days</option>
+        <option value="active">Ready for next refill cycle</option>
+        <option value="followup">Orders needing follow-up</option>
+        <option value="insurance">Insurance issue</option>
+        <option value="inactive">Inactive</option>
+      </select>
+    </label></div>
+  </div>
+  <div class="actions">
+    <button class="secondary" id="exportBtn" type="button">Export backup</button>
+    <button class="secondary" id="importBtn" type="button">Import backup</button>
+    <input id="importFile" type="file" accept=".json" hidden>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Patient</th><th>Medication</th><th>Rx / Pharmacy</th><th>Last delivered</th>
+          <th>Next refill / Follow-up</th><th>Status</th><th>Notes</th><th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="medTableBody"></tbody>
+    </table>
+  </div>
+</section>
+</main>
+
+<footer>
+Data is stored only in this browser. Use Export Backup regularly. Do not save backups in an unapproved personal cloud or email account.
+</footer>
+
+<script>
+(() => {
+  const DATA_KEY = "medicationOrderReminder.data.v2";
+  const OLD_KEY = "medicationOrderReminder.records.v1";
+  let data = loadData();
+  data.medications = (data.medications || []).map(m => ({
+    orderPlacedDate:"",
+    followUpDate:"",
+    callLogs:[],
+    ...m,
+    callLogs:Array.isArray(m.callLogs)?m.callLogs:[]
+  }));
+  let editingResidentId = null;
+  let editingMedId = null;
+  const $ = id => document.getElementById(id);
+
+  function loadData(){
+    try{
+      const raw = localStorage.getItem(DATA_KEY);
+      if(raw) return JSON.parse(raw);
+      const old = localStorage.getItem(OLD_KEY);
+      if(old){
+        const oldRecords = JSON.parse(old);
+        const residents = [];
+        const medications = [];
+        oldRecords.forEach(r => {
+          let resident = residents.find(x =>
+            x.name === r.patientName &&
+            x.dob === r.dob &&
+            x.pharmacy === r.pharmacyName &&
+            x.phone === r.pharmacyPhone
+          );
+          if(!resident){
+            resident = {
+              id: crypto.randomUUID(),
+              name:r.patientName || "",
+              dob:r.dob || "",
+              pharmacy:r.pharmacyName || "",
+              phone:r.pharmacyPhone || "",
+              notes:""
+            };
+            residents.push(resident);
+          }
+          medications.push({
+            id:r.id || crypto.randomUUID(),
+            residentId:resident.id,
+            medication:r.medication || "",
+            rxNumber:r.rxNumber || "",
+            lastOrderDate:r.lastOrderDate || "",
+            orderPlacedDate:"",
+            followUpDate:"",
+            callLogs:[],
+            reminderDays:Number(r.reminderDays || 25),
+            daysSupply:Number(r.daysSupply || 0),
+            status:r.status || "Active",
+            notes:r.notes || ""
+          });
+        });
+        return {residents, medications};
+      }
+    }catch(e){}
+    return {residents:[], medications:[]};
+  }
+
+  function saveData(){
+    localStorage.setItem(DATA_KEY, JSON.stringify(data));
+  }
+
+  function esc(v){
+    return String(v ?? "").replace(/[&<>"']/g, c => ({
+      "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
+    })[c]);
+  }
+
+  function todayStr(date=new Date()){
+    return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`;
+  }
+
+  function addDays(dateStr,days){
+    if(!dateStr) return "";
+    const [y,m,d]=dateStr.split("-").map(Number);
+    const dt=new Date(y,m-1,d);
+    dt.setDate(dt.getDate()+Number(days||0));
+    return todayStr(dt);
+  }
+
+  function diffDays(fromStr,toStr){
+    const [fy,fm,fd]=fromStr.split("-").map(Number);
+    const [ty,tm,td]=toStr.split("-").map(Number);
+    return Math.round((new Date(ty,tm-1,td)-new Date(fy,fm-1,fd))/86400000);
+  }
+
+  function fmt(dateStr){
+    if(!dateStr) return "";
+    const [y,m,d]=dateStr.split("-").map(Number);
+    return new Date(y,m-1,d).toLocaleDateString();
+  }
+
+  function residentFor(med){ return data.residents.find(r=>r.id===med.residentId); }
+
+  function dueInfo(med){
+    const next=addDays(med.lastOrderDate,med.reminderDays);
+    if(!next || med.status!=="Active") return {next,type:"current",days:null};
+    const diff=diffDays(todayStr(),next);
+    if(diff<0) return {next,type:"overdue",days:Math.abs(diff)};
+    if(diff===0) return {next,type:"today",days:0};
+    if(diff<=7) return {next,type:"soon",days:diff};
+    return {next,type:"current",days:diff};
+  }
+
+  function switchTab(tab){
+    const residents = tab==="residents";
+    $("residentTab").classList.toggle("hidden",!residents);
+    $("medTab").classList.toggle("hidden",residents);
+    $("residentTabBtn").classList.toggle("active",residents);
+    $("medTabBtn").classList.toggle("active",!residents);
+  }
+
+  function renderAll(){
+    renderPatientSelect();
+    renderResidents();
+    renderSummary();
+    renderMedTable();
+    updatePatientFields();
+  }
+
+  function renderPatientSelect(){
+    const current=$("patientSelect").value;
+    const sorted=[...data.residents].sort((a,b)=>a.name.localeCompare(b.name));
+    $("patientSelect").innerHTML='<option value="">Select resident...</option>'+
+      sorted.map(r=>`<option value="${r.id}">${esc(r.name)}</option>`).join("");
+    if(data.residents.some(r=>r.id===current)) $("patientSelect").value=current;
+  }
+
+  function renderResidents(){
+    if(!data.residents.length){
+      $("residentTableBody").innerHTML='<tr><td colspan="6" class="empty">No residents entered yet.</td></tr>';
+      return;
+    }
+    $("residentTableBody").innerHTML=[...data.residents].sort((a,b)=>a.name.localeCompare(b.name)).map(r=>`
+      <tr>
+        <td><strong>${esc(r.name)}</strong></td>
+        <td>${esc(fmt(r.dob))}</td>
+        <td>${esc(r.pharmacy)}</td>
+        <td>${esc(r.phone)}</td>
+        <td>${esc(r.notes)}</td>
+        <td><div class="actions">
+          <button class="secondary edit-resident" data-id="${r.id}" type="button">Edit</button>
+          <button class="primary add-med-for" data-id="${r.id}" type="button">Add medication</button>
+          <button class="danger delete-resident" data-id="${r.id}" type="button">Delete</button>
+        </div></td>
+      </tr>`).join("");
+
+    document.querySelectorAll(".edit-resident").forEach(b=>b.addEventListener("click",()=>editResident(b.dataset.id)));
+    document.querySelectorAll(".add-med-for").forEach(b=>b.addEventListener("click",()=>addMedForResident(b.dataset.id)));
+    document.querySelectorAll(".delete-resident").forEach(b=>b.addEventListener("click",()=>deleteResident(b.dataset.id)));
+  }
+
+  function renderSummary(){
+    const refillMeds=data.medications.filter(m=>m.status==="Active");
+    const followupMeds=data.medications.filter(m=>["Ordered","In progress","Insurance issue","Ready for pickup"].includes(m.status));
+    const groups={overdue:[],today:[],soon:[],current:[]};
+    refillMeds.forEach(m=>groups[dueInfo(m).type].push(m));
+
+    $("countOverdue").textContent=groups.overdue.length;
+    $("countToday").textContent=groups.today.length;
+    $("countSoon").textContent=groups.soon.length;
+    $("countFollowup").textContent=followupMeds.length;
+
+    const followups=[...followupMeds].sort((a,b)=>(a.followUpDate||"9999-12-31").localeCompare(b.followUpDate||"9999-12-31"));
+    if(!followups.length){
+      $("followupList").innerHTML='<div class="empty">No current pharmacy orders need follow-up.</div>';
+    }else{
+      $("followupList").innerHTML=followups.map(m=>{
+        const r=residentFor(m)||{};
+        const follow=m.followUpDate||"";
+        const isDue=follow && follow<=todayStr();
+        return `<div class="reminder-item">
+          <div><strong>${esc(r.name||"Unknown resident")}</strong><div class="small">${esc(m.medication)} • Rx ${esc(m.rxNumber||"—")}</div></div>
+          <div><strong>${esc(m.status)}</strong><div class="small">Ordered: ${esc(fmt(m.orderPlacedDate)||"not recorded")}</div></div>
+          <div>${follow?`<span class="badge ${isDue?"badge-overdue":"badge-soon"}">${isDue?"Follow up now":"Follow up"}</span><div class="small">${esc(fmt(follow))}</div>`:'<span class="small">No follow-up date</span>'}</div>
+          <div class="actions">
+            <button class="secondary progress-top" data-id="${m.id}" type="button">In progress</button>
+            <button class="success delivered-top" data-id="${m.id}" type="button">Delivered</button>
+          </div>
+        </div>`;
+      }).join("");
+      document.querySelectorAll(".progress-top").forEach(b=>b.addEventListener("click",()=>setProgress(b.dataset.id)));
+      document.querySelectorAll(".delivered-top").forEach(b=>b.addEventListener("click",()=>markDelivered(b.dataset.id)));
+    }
+
+    const urgent=[...groups.overdue,...groups.today,...groups.soon]
+      .sort((a,b)=>dueInfo(a).next.localeCompare(dueInfo(b).next));
+
+    if(!urgent.length){
+      $("reminderList").innerHTML='<div class="empty">No refill reminders are due within the next 7 days.</div>';
+      return;
+    }
+
+    $("reminderList").innerHTML=urgent.map(m=>{
+      const r=residentFor(m)||{};
+      const info=dueInfo(m);
+      const label=info.type==="overdue"?`${info.days} day(s) overdue`:info.type==="today"?"Due today":`Due in ${info.days} day(s)`;
+      return `<div class="reminder-item">
+        <div><strong>${esc(r.name||"Unknown resident")}</strong><div class="small">DOB: ${esc(fmt(r.dob))}</div></div>
+        <div><strong>${esc(m.medication)}</strong><div class="small">Rx ${esc(m.rxNumber||"—")} • ${esc(r.pharmacy||"")}</div></div>
+        <div><span class="badge badge-${info.type}">${label}</span><div class="small">${esc(fmt(info.next))}</div></div>
+        <button class="primary order-top" data-id="${m.id}" type="button">Ordered today</button>
+      </div>`;
+    }).join("");
+    document.querySelectorAll(".order-top").forEach(b=>b.addEventListener("click",()=>markOrdered(b.dataset.id)));
+  }
+
+  function renderMedTable(){
+    const q=$("searchInput").value.trim().toLowerCase();
+    const filter=$("filterSelect").value;
+    let list=data.medications.filter(m=>{
+      const r=residentFor(m)||{};
+      const hay=[r.name,r.dob,r.pharmacy,r.phone,m.medication,m.rxNumber,m.notes].join(" ").toLowerCase();
+      if(q&&!hay.includes(q)) return false;
+      const info=dueInfo(m);
+      if(filter==="due"&&!["overdue","today"].includes(info.type)) return false;
+      if(filter==="soon"&&!["overdue","today","soon"].includes(info.type)) return false;
+      if(filter==="active"&&m.status!=="Active") return false;
+      if(filter==="followup"&&!["Ordered","In progress","Insurance issue","Ready for pickup"].includes(m.status)) return false;
+      if(filter==="insurance"&&m.status!=="Insurance issue") return false;
+      if(filter==="inactive"&&m.status!=="Inactive") return false;
+      return true;
+    });
+
+    list.sort((a,b)=>{
+      const ad=dueInfo(a).next||"9999-12-31", bd=dueInfo(b).next||"9999-12-31";
+      const ar=residentFor(a)?.name||"", br=residentFor(b)?.name||"";
+      return ad.localeCompare(bd)||ar.localeCompare(br);
+    });
+
+    if(!list.length){
+      $("medTableBody").innerHTML='<tr><td colspan="8" class="empty">No matching medications.</td></tr>';
+      return;
+    }
+
+    $("medTableBody").innerHTML=list.map(m=>{
+      const r=residentFor(m)||{};
+      const info=dueInfo(m);
+      const rowClass=info.type==="overdue"?"due-overdue":info.type==="today"?"due-today":info.type==="soon"?"due-soon":"";
+      return `<tr class="${rowClass}">
+        <td><strong>${esc(r.name||"Unknown")}</strong><br><span class="small">${esc(fmt(r.dob))}</span></td>
+        <td><strong>${esc(m.medication)}</strong><br><span class="small">${m.daysSupply?esc(m.daysSupply+" days supply"):""}</span></td>
+        <td>Rx ${esc(m.rxNumber||"—")}<br><span class="small">${esc(r.pharmacy||"")}<br>${esc(r.phone||"")}</span></td>
+        <td>${esc(fmt(m.lastOrderDate))}</td>
+        <td>${m.status==="Active"
+          ? `${esc(fmt(info.next))}<br><span class="small">${esc(m.reminderDays)} days after delivery</span>`
+          : `Follow up: ${esc(fmt(m.followUpDate)||"not set")}<br><span class="small">Ordered ${esc(fmt(m.orderPlacedDate)||"")}</span>`}</td>
+        <td>${esc(m.status)}</td>
+        <td>${esc(m.notes)}</td>
+        <td><div class="actions">
+          <button class="secondary edit-med" data-id="${m.id}" type="button">Edit / Log</button>
+          ${m.status==="Active"
+            ? `<button class="primary order-med" data-id="${m.id}" type="button">Ordered</button>`
+            : `<button class="success delivered-med" data-id="${m.id}" type="button">Delivered</button>`}
+          <button class="danger delete-med" data-id="${m.id}" type="button">Delete</button>
+        </div></td>
+      </tr>`;
+    }).join("");
+
+    document.querySelectorAll(".edit-med").forEach(b=>b.addEventListener("click",()=>editMedication(b.dataset.id)));
+    document.querySelectorAll(".order-med").forEach(b=>b.addEventListener("click",()=>markOrdered(b.dataset.id)));
+    document.querySelectorAll(".delivered-med").forEach(b=>b.addEventListener("click",()=>markDelivered(b.dataset.id)));
+    document.querySelectorAll(".delete-med").forEach(b=>b.addEventListener("click",()=>deleteMedication(b.dataset.id)));
+  }
+
+  function updatePatientFields(){
+    const r=data.residents.find(x=>x.id===$("patientSelect").value);
+    $("medDob").value=r?fmt(r.dob):"";
+    $("medPharmacy").value=r?.pharmacy||"";
+    $("medPhone").value=r?.phone||"";
+    $("patientInfo").textContent=r
+      ? `${r.name} • DOB ${fmt(r.dob)||"not entered"} • ${r.pharmacy||"No pharmacy entered"} • ${r.phone||"No phone entered"}`
+      : "Select a resident to automatically fill DOB and pharmacy information.";
+  }
+
+  function clearResidentForm(){
+    editingResidentId=null;
+    $("residentFormTitle").textContent="Add resident";
+    ["residentName","residentDob","residentPharmacy","residentPhone","residentNotes"].forEach(id=>$(id).value="");
+  }
+
+  function saveResident(){
+    const name=$("residentName").value.trim();
+    if(!name){alert("Please enter the patient name.");return;}
+    const record={
+      id:editingResidentId||crypto.randomUUID(),
+      name,
+      dob:$("residentDob").value,
+      pharmacy:$("residentPharmacy").value.trim(),
+      phone:$("residentPhone").value.trim(),
+      notes:$("residentNotes").value.trim()
+    };
+    const i=data.residents.findIndex(r=>r.id===record.id);
+    if(i>=0)data.residents[i]=record;else data.residents.push(record);
+    saveData();clearResidentForm();renderAll();
+  }
+
+  function editResident(id){
+    const r=data.residents.find(x=>x.id===id);if(!r)return;
+    editingResidentId=id;
+    $("residentFormTitle").textContent="Edit resident";
+    $("residentName").value=r.name;$("residentDob").value=r.dob;$("residentPharmacy").value=r.pharmacy;
+    $("residentPhone").value=r.phone;$("residentNotes").value=r.notes;
+    switchTab("residents");window.scrollTo({top:document.querySelector("#residentFormTitle").offsetTop-20,behavior:"smooth"});
+  }
+
+  function addMedForResident(id){
+    clearMedForm();
+    switchTab("medications");
+    $("patientSelect").value=id;updatePatientFields();$("medication").focus();
+  }
+
+  function deleteResident(id){
+    const r=data.residents.find(x=>x.id===id);if(!r)return;
+    const count=data.medications.filter(m=>m.residentId===id).length;
+    if(count){
+      alert(`This resident has ${count} medication record(s). Delete or reassign those medications first.`);
+      return;
+    }
+    if(!confirm(`Delete ${r.name}?`))return;
+    data.residents=data.residents.filter(x=>x.id!==id);saveData();renderAll();
+  }
+
+  function clearMedForm(){
+    editingMedId=null;
+    $("medFormTitle").textContent="Add medication";
+    $("patientSelect").value="";
+    ["medication","rxNumber","lastOrderDate","orderPlacedDate","followUpDate","daysSupply","medNotes"].forEach(id=>$(id).value="");
+    $("reminderDays").value="25";$("status").value="Active";
+    $("callLogText").value="";
+    $("callLogPanel").classList.add("hidden");
+    $("callLogList").innerHTML="";
+    updatePatientFields();
+  }
+
+  function saveMedication(){
+    const residentId=$("patientSelect").value;
+    const medication=$("medication").value.trim();
+    const lastOrderDate=$("lastOrderDate").value;
+    const reminderDays=Number($("reminderDays").value||0);
+    if(!residentId||!medication||!lastOrderDate||!reminderDays){
+      alert("Please select a patient and enter medication, last order date, and reminder days.");return;
+    }
+    const record={
+      id:editingMedId||crypto.randomUUID(),
+      residentId,medication,
+      rxNumber:$("rxNumber").value.trim(),
+      lastOrderDate,
+      orderPlacedDate:$("orderPlacedDate").value,
+      followUpDate:$("followUpDate").value,
+      callLogs: editingMedId ? (data.medications.find(m=>m.id===editingMedId)?.callLogs || []) : [],
+      reminderDays,
+      daysSupply:Number($("daysSupply").value||0),
+      status:$("status").value,
+      notes:$("medNotes").value.trim()
+    };
+    const i=data.medications.findIndex(m=>m.id===record.id);
+    if(i>=0)data.medications[i]=record;else data.medications.push(record);
+    saveData();clearMedForm();renderAll();
+  }
+
+  function editMedication(id){
+    const m=data.medications.find(x=>x.id===id);if(!m)return;
+    editingMedId=id;switchTab("medications");
+    $("medFormTitle").textContent="Edit medication";
+    $("patientSelect").value=m.residentId;$("medication").value=m.medication;$("rxNumber").value=m.rxNumber;
+    $("lastOrderDate").value=m.lastOrderDate;$("orderPlacedDate").value=m.orderPlacedDate||"";
+    $("followUpDate").value=m.followUpDate||"";$("reminderDays").value=m.reminderDays;
+    $("daysSupply").value=m.daysSupply||"";$("status").value=m.status;$("medNotes").value=m.notes;
+    updatePatientFields();
+    renderCallLogs();
+    $("callLogPanel").classList.remove("hidden");
+    window.scrollTo({top:document.querySelector("#medFormTitle").offsetTop-20,behavior:"smooth"});
+  }
+
+
+  function formatDateTime(value){
+    if(!value) return "";
+    const d=new Date(value);
+    return d.toLocaleString();
+  }
+
+  function renderCallLogs(){
+    const m=data.medications.find(x=>x.id===editingMedId);
+    if(!m){
+      $("callLogPanel").classList.add("hidden");
+      $("callLogList").innerHTML="";
+      return;
+    }
+    $("callLogPanel").classList.remove("hidden");
+    const logs=[...(m.callLogs||[])].sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
+    if(!logs.length){
+      $("callLogList").innerHTML='<div class="empty" style="margin-top:8px">No call log entries yet.</div>';
+      return;
+    }
+    $("callLogList").innerHTML=logs.map(log=>`
+      <div class="log-entry">
+        <div class="log-entry-header">
+          <strong>${esc(formatDateTime(log.createdAt))}</strong>
+          <button class="danger delete-log" data-id="${log.id}" type="button">Delete</button>
+        </div>
+        <div class="log-text">${esc(log.text)}</div>
+      </div>`).join("");
+    document.querySelectorAll(".delete-log").forEach(b=>b.addEventListener("click",()=>deleteCallLog(b.dataset.id)));
+  }
+
+  function addCallLog(){
+    const m=data.medications.find(x=>x.id===editingMedId);
+    if(!m){
+      alert("Please save the medication first, then open Edit / Log.");
+      return;
+    }
+    const note=$("callLogText").value.trim();
+    if(!note){
+      alert("Please type a call log note.");
+      return;
+    }
+    m.callLogs=m.callLogs||[];
+    m.callLogs.push({
+      id:crypto.randomUUID(),
+      createdAt:new Date().toISOString(),
+      text:note
+    });
+    $("callLogText").value="";
+    saveData();
+    renderCallLogs();
+  }
+
+  function deleteCallLog(logId){
+    const m=data.medications.find(x=>x.id===editingMedId);
+    if(!m)return;
+    const log=(m.callLogs||[]).find(x=>x.id===logId);
+    if(!log)return;
+    if(!confirm("Delete this call log entry?"))return;
+    m.callLogs=(m.callLogs||[]).filter(x=>x.id!==logId);
+    saveData();
+    renderCallLogs();
+  }
+
+  function markOrdered(id){
+    const m=data.medications.find(x=>x.id===id);if(!m)return;
+    m.orderPlacedDate=todayStr();
+    const dt=new Date();dt.setDate(dt.getDate()+2);
+    m.followUpDate=todayStr(dt);
+    m.status="Ordered";
+    saveData();renderAll();
+  }
+
+  function setProgress(id){
+    const m=data.medications.find(x=>x.id===id);if(!m)return;
+    m.status="In progress";
+    saveData();renderAll();
+  }
+
+  function markDelivered(id){
+    const m=data.medications.find(x=>x.id===id);if(!m)return;
+    m.lastOrderDate=todayStr();
+    m.orderPlacedDate="";
+    m.followUpDate="";
+    m.status="Active";
+    saveData();renderAll();
+  }
+
+  function deleteMedication(id){
+    const m=data.medications.find(x=>x.id===id);if(!m)return;
+    const r=residentFor(m);
+    if(!confirm(`Delete ${r?.name||"resident"} - ${m.medication}?`))return;
+    data.medications=data.medications.filter(x=>x.id!==id);saveData();renderAll();
+  }
+
+  function exportBackup(){
+    const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
+    const url=URL.createObjectURL(blob),a=document.createElement("a");
+    a.href=url;a.download=`medication-reminder-backup-${todayStr()}.json`;a.click();URL.revokeObjectURL(url);
+  }
+
+  function importBackup(file){
+    const reader=new FileReader();
+    reader.onload=()=>{
+      try{
+        const imported=JSON.parse(reader.result);
+        if(!imported||!Array.isArray(imported.residents)||!Array.isArray(imported.medications))throw new Error();
+        if(!confirm(`Replace current data with ${imported.residents.length} residents and ${imported.medications.length} medications?`))return;
+        data=imported;saveData();clearResidentForm();clearMedForm();renderAll();
+      }catch(e){alert("This backup file could not be read.");}
+    };
+    reader.readAsText(file);
+  }
+
+  $("residentTabBtn").addEventListener("click",()=>switchTab("residents"));
+  $("medTabBtn").addEventListener("click",()=>switchTab("medications"));
+  $("saveResidentBtn").addEventListener("click",saveResident);
+  $("clearResidentBtn").addEventListener("click",clearResidentForm);
+  $("saveMedBtn").addEventListener("click",saveMedication);
+  $("clearMedBtn").addEventListener("click",clearMedForm);
+  $("addCallLogBtn").addEventListener("click",addCallLog);
+  $("patientSelect").addEventListener("change",updatePatientFields);
+  $("searchInput").addEventListener("input",renderMedTable);
+  $("filterSelect").addEventListener("change",renderMedTable);
+  $("exportBtn").addEventListener("click",exportBackup);
+  $("importBtn").addEventListener("click",()=>$("importFile").click());
+  $("importFile").addEventListener("change",e=>{if(e.target.files[0])importBackup(e.target.files[0]);e.target.value="";});
+
+  renderAll();
+})();
+</script>
+<script>
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("service-worker.js").catch(() => {});
+  });
+}
+</script>
+</body>
+</html>
