@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Medication Manager</title>
+<title>Medication Order Tracking</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#1f3a5f">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
@@ -60,6 +60,18 @@ tr.due-overdue{background:#fff5f5}tr.due-today{background:#fffaf0}tr.due-soon{ba
 .log-compose{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:end}
 .log-compose textarea{min-height:72px}
 .hidden{display:none}
+.resident-scroll{max-height:430px;overflow-y:auto;border:1px solid var(--border);border-radius:10px;margin-top:12px}
+.resident-scroll table{margin-top:0}
+.medication-scroll{max-height:560px;overflow:auto;border:1px solid var(--border);border-radius:10px;margin-top:12px}
+.medication-scroll table{margin-top:0}
+.med-link{background:none;border:0;padding:0;color:var(--accent);font-weight:bold;text-decoration:underline;cursor:pointer;text-align:left}
+.quick-tags{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px}
+.quick-tag{padding:5px 8px;border:1px solid var(--border);background:#fff;color:var(--text)}
+.quick-tag.active{background:#fee2e2;color:#991b1b;border-color:#fecaca;font-weight:bold}
+.urgent-row{border-left:6px solid var(--danger)!important}
+.followup-item{grid-template-columns:1.1fr 1.5fr auto!important}
+.update-banner{display:none;background:#fff7ed;border:1px solid #fdba74;border-radius:10px;padding:10px 12px;margin-bottom:14px;align-items:center;justify-content:space-between;gap:10px}
+.update-banner.show{display:flex}
 footer{max-width:1180px;margin:0 auto 25px;padding:0 18px;color:var(--muted);font-size:.8rem}
 @media(max-width:850px){
   .summary{grid-template-columns:repeat(2,1fr)}
@@ -75,11 +87,15 @@ footer{max-width:1180px;margin:0 auto 25px;padding:0 18px;color:var(--muted);fon
 </head>
 <body>
 <header>
-  <h1>Medication Order Reminder</h1>
-  <p>Residents entered once • Tracks ordering through delivery • Local browser storage</p>
+  <h1>Medication Order Tracking</h1>
+  <p>Residents entered once • Tracks ordering through delivery • Local browser storage • v1.4</p>
 </header>
 
 <main>
+<div id="updateBanner" class="update-banner">
+  <span>A newer version of Medication Order Tracking is available.</span>
+  <button id="updateNowBtn" class="primary" type="button">Update now</button>
+</div>
 <section class="panel">
   <h2>Reminders</h2>
   <div class="summary">
@@ -93,6 +109,7 @@ footer{max-width:1180px;margin:0 auto 25px;padding:0 18px;color:var(--muted);fon
   <h3 style="margin:16px 0 8px">Upcoming refill reminders</h3>
   <div id="reminderList" class="reminder-list"></div>
 </section>
+
 
 <section class="panel">
   <div class="tabs">
@@ -124,13 +141,15 @@ footer{max-width:1180px;margin:0 auto 25px;padding:0 18px;color:var(--muted);fon
       <button class="secondary" id="clearResidentBtn" type="button">Clear form</button>
     </div>
 
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr><th>Patient</th><th>DOB</th><th>Default pharmacy</th><th>Phone</th><th>Notes</th><th>Actions</th></tr>
-        </thead>
-        <tbody id="residentTableBody"></tbody>
-      </table>
+    <div class="resident-scroll">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Patient</th><th>DOB</th><th>Default pharmacy</th><th>Phone</th><th>Notes</th><th>Actions</th></tr>
+          </thead>
+          <tbody id="residentTableBody"></tbody>
+        </table>
+      </div>
     </div>
   </div>
 
@@ -159,7 +178,7 @@ footer{max-width:1180px;margin:0 auto 25px;padding:0 18px;color:var(--muted);fon
         <input id="lastOrderDate" type="date">
       </label>
       <label>Remind after delivery (days)
-        <input id="reminderDays" type="number" min="1" value="25">
+        <input id="reminderDays" type="number" min="1" value="23">
       </label>
       <label>Order placed date
         <input id="orderPlacedDate" type="date">
@@ -215,6 +234,7 @@ footer{max-width:1180px;margin:0 auto 25px;padding:0 18px;color:var(--muted);fon
         <option value="active">Ready for next refill cycle</option>
         <option value="followup">Orders needing follow-up</option>
         <option value="insurance">Insurance issue</option>
+        <option value="calllogs">Has call logs</option>
         <option value="inactive">Inactive</option>
       </select>
     </label></div>
@@ -224,6 +244,7 @@ footer{max-width:1180px;margin:0 auto 25px;padding:0 18px;color:var(--muted);fon
     <button class="secondary" id="importBtn" type="button">Import backup</button>
     <input id="importFile" type="file" accept=".json" hidden>
   </div>
+  <div class="medication-scroll">
   <div class="table-wrap">
     <table>
       <thead>
@@ -234,6 +255,7 @@ footer{max-width:1180px;margin:0 auto 25px;padding:0 18px;color:var(--muted);fon
       </thead>
       <tbody id="medTableBody"></tbody>
     </table>
+  </div>
   </div>
 </section>
 </main>
@@ -247,12 +269,23 @@ Data is stored only in this browser. Use Export Backup regularly. Do not save ba
   const DATA_KEY = "medicationOrderReminder.data.v2";
   const OLD_KEY = "medicationOrderReminder.records.v1";
   let data = loadData();
+  data.settings = {
+    residentSort: data.settings?.residentSort || "lastName",
+    defaultReminderDays: Number(data.settings?.defaultReminderDays || 23)
+  };
+  data.residents = (data.residents || []).map((r,index)=>({...r, customOrder:Number.isFinite(r.customOrder)?r.customOrder:index}));
   data.medications = (data.medications || []).map(m => ({
     orderPlacedDate:"",
     followUpDate:"",
     callLogs:[],
+    paFlag:false,
+    callFlag:false,
+    urgentFlag:false,
     ...m,
-    callLogs:Array.isArray(m.callLogs)?m.callLogs:[]
+    callLogs:Array.isArray(m.callLogs)?m.callLogs:[],
+    paFlag:Boolean(m.paFlag),
+    callFlag:Boolean(m.callFlag),
+    urgentFlag:Boolean(m.urgentFlag)
   }));
   let editingResidentId = null;
   let editingMedId = null;
@@ -294,16 +327,19 @@ Data is stored only in this browser. Use Export Backup regularly. Do not save ba
             orderPlacedDate:"",
             followUpDate:"",
             callLogs:[],
-            reminderDays:Number(r.reminderDays || 25),
+            paFlag:false,
+            callFlag:false,
+            urgentFlag:false,
+            reminderDays:Number(r.reminderDays || 23),
             daysSupply:Number(r.daysSupply || 0),
             status:r.status || "Active",
             notes:r.notes || ""
           });
         });
-        return {residents, medications};
+        return {residents, medications, settings:{defaultReminderDays:23}};
       }
     }catch(e){}
-    return {residents:[], medications:[]};
+    return {residents:[], medications:[], settings:{defaultReminderDays:23}};
   }
 
   function saveData(){
@@ -360,7 +396,24 @@ Data is stored only in this browser. Use Export Backup regularly. Do not save ba
     $("medTabBtn").classList.toggle("active",!residents);
   }
 
+  function lastNameKey(name){
+    const clean=String(name||"").trim().replace(/\s+/g," ");
+    if(!clean)return "";
+    if(clean.includes(","))return clean.split(",")[0].trim().toLowerCase();
+    const parts=clean.split(" ");
+    return parts[parts.length-1].toLowerCase();
+  }
+
+  function sortedResidents(){
+    return [...data.residents].sort((a,b)=>lastNameKey(a.name).localeCompare(lastNameKey(b.name))||a.name.localeCompare(b.name));
+  }
+
+  function renderSettings(){
+  }
+
+
   function renderAll(){
+    renderSettings();
     renderPatientSelect();
     renderResidents();
     renderSummary();
@@ -370,7 +423,7 @@ Data is stored only in this browser. Use Export Backup regularly. Do not save ba
 
   function renderPatientSelect(){
     const current=$("patientSelect").value;
-    const sorted=[...data.residents].sort((a,b)=>a.name.localeCompare(b.name));
+    const sorted=sortedResidents();
     $("patientSelect").innerHTML='<option value="">Select resident...</option>'+
       sorted.map(r=>`<option value="${r.id}">${esc(r.name)}</option>`).join("");
     if(data.residents.some(r=>r.id===current)) $("patientSelect").value=current;
@@ -381,7 +434,8 @@ Data is stored only in this browser. Use Export Backup regularly. Do not save ba
       $("residentTableBody").innerHTML='<tr><td colspan="6" class="empty">No residents entered yet.</td></tr>';
       return;
     }
-    $("residentTableBody").innerHTML=[...data.residents].sort((a,b)=>a.name.localeCompare(b.name)).map(r=>`
+    const residents=sortedResidents();
+    $("residentTableBody").innerHTML=residents.map((r,index)=>`
       <tr>
         <td><strong>${esc(r.name)}</strong></td>
         <td>${esc(fmt(r.dob))}</td>
@@ -411,7 +465,10 @@ Data is stored only in this browser. Use Export Backup regularly. Do not save ba
     $("countSoon").textContent=groups.soon.length;
     $("countFollowup").textContent=followupMeds.length;
 
-    const followups=[...followupMeds].sort((a,b)=>(a.followUpDate||"9999-12-31").localeCompare(b.followUpDate||"9999-12-31"));
+    const followups=[...followupMeds].sort((a,b)=>{
+      if(Boolean(a.urgentFlag)!==Boolean(b.urgentFlag)) return a.urgentFlag?-1:1;
+      return (a.followUpDate||"9999-12-31").localeCompare(b.followUpDate||"9999-12-31");
+    });
     if(!followups.length){
       $("followupList").innerHTML='<div class="empty">No current pharmacy orders need follow-up.</div>';
     }else{
@@ -419,17 +476,25 @@ Data is stored only in this browser. Use Export Backup regularly. Do not save ba
         const r=residentFor(m)||{};
         const follow=m.followUpDate||"";
         const isDue=follow && follow<=todayStr();
-        return `<div class="reminder-item">
-          <div><strong>${esc(r.name||"Unknown resident")}</strong><div class="small">${esc(m.medication)} • Rx ${esc(m.rxNumber||"—")}</div></div>
-          <div><strong>${esc(m.status)}</strong><div class="small">Ordered: ${esc(fmt(m.orderPlacedDate)||"not recorded")}</div></div>
-          <div>${follow?`<span class="badge ${isDue?"badge-overdue":"badge-soon"}">${isDue?"Follow up now":"Follow up"}</span><div class="small">${esc(fmt(follow))}</div>`:'<span class="small">No follow-up date</span>'}</div>
+        return `<div class="reminder-item followup-item ${m.urgentFlag?'urgent-row':''}">
+          <div><strong>${esc(r.name||"Unknown resident")}</strong><div class="small">DOB: ${esc(fmt(r.dob))}</div></div>
+          <div><button class="med-link edit-from-followup" data-id="${m.id}" type="button">${esc(m.medication)}</button>
+            <div class="small">Rx ${esc(m.rxNumber||"—")} • ${esc(m.status)}${follow?` • Follow up ${esc(fmt(follow))}`:""}</div>
+            <div class="quick-tags">
+              ${m.callFlag?'<span class="badge badge-soon" title="Call follow-up">☎</span>':''}
+              ${m.urgentFlag?'<span class="badge badge-overdue" title="Urgent flag">⚑</span>':''}
+            </div>
+          </div>
           <div class="actions">
-            <button class="secondary progress-top" data-id="${m.id}" type="button">In progress</button>
+            <button class="quick-tag icon-tag toggle-call-top ${m.callFlag?'active':''}" title="Call follow-up" aria-label="Call follow-up" data-id="${m.id}" type="button">☎</button>
+            <button class="quick-tag icon-tag toggle-urgent-top ${m.urgentFlag?'active':''}" title="Urgent flag" aria-label="Urgent flag" data-id="${m.id}" type="button">⚑</button>
             <button class="success delivered-top" data-id="${m.id}" type="button">Delivered</button>
           </div>
         </div>`;
       }).join("");
-      document.querySelectorAll(".progress-top").forEach(b=>b.addEventListener("click",()=>setProgress(b.dataset.id)));
+      document.querySelectorAll(".edit-from-followup").forEach(b=>b.addEventListener("click",()=>editMedication(b.dataset.id)));
+      document.querySelectorAll(".toggle-call-top").forEach(b=>b.addEventListener("click",()=>toggleFlag(b.dataset.id,"callFlag")));
+      document.querySelectorAll(".toggle-urgent-top").forEach(b=>b.addEventListener("click",()=>toggleFlag(b.dataset.id,"urgentFlag")));
       document.querySelectorAll(".delivered-top").forEach(b=>b.addEventListener("click",()=>markDelivered(b.dataset.id)));
     }
 
@@ -447,11 +512,12 @@ Data is stored only in this browser. Use Export Backup regularly. Do not save ba
       const label=info.type==="overdue"?`${info.days} day(s) overdue`:info.type==="today"?"Due today":`Due in ${info.days} day(s)`;
       return `<div class="reminder-item">
         <div><strong>${esc(r.name||"Unknown resident")}</strong><div class="small">DOB: ${esc(fmt(r.dob))}</div></div>
-        <div><strong>${esc(m.medication)}</strong><div class="small">Rx ${esc(m.rxNumber||"—")} • ${esc(r.pharmacy||"")}</div></div>
+        <div><button class="med-link edit-from-reminder" data-id="${m.id}" type="button">${esc(m.medication)}</button><div class="small">Rx ${esc(m.rxNumber||"—")} • ${esc(r.pharmacy||"")}</div></div>
         <div><span class="badge badge-${info.type}">${label}</span><div class="small">${esc(fmt(info.next))}</div></div>
         <button class="primary order-top" data-id="${m.id}" type="button">Ordered today</button>
       </div>`;
     }).join("");
+    document.querySelectorAll(".edit-from-reminder").forEach(b=>b.addEventListener("click",()=>editMedication(b.dataset.id)));
     document.querySelectorAll(".order-top").forEach(b=>b.addEventListener("click",()=>markOrdered(b.dataset.id)));
   }
 
@@ -468,6 +534,7 @@ Data is stored only in this browser. Use Export Backup regularly. Do not save ba
       if(filter==="active"&&m.status!=="Active") return false;
       if(filter==="followup"&&!["Ordered","In progress","Insurance issue","Ready for pickup"].includes(m.status)) return false;
       if(filter==="insurance"&&m.status!=="Insurance issue") return false;
+      if(filter==="calllogs"&&!(m.callLogs||[]).length) return false;
       if(filter==="inactive"&&m.status!=="Inactive") return false;
       return true;
     });
@@ -475,7 +542,7 @@ Data is stored only in this browser. Use Export Backup regularly. Do not save ba
     list.sort((a,b)=>{
       const ad=dueInfo(a).next||"9999-12-31", bd=dueInfo(b).next||"9999-12-31";
       const ar=residentFor(a)?.name||"", br=residentFor(b)?.name||"";
-      return ad.localeCompare(bd)||ar.localeCompare(br);
+      return ad.localeCompare(bd)||lastNameKey(ar).localeCompare(lastNameKey(br))||ar.localeCompare(br);
     });
 
     if(!list.length){
@@ -486,10 +553,10 @@ Data is stored only in this browser. Use Export Backup regularly. Do not save ba
     $("medTableBody").innerHTML=list.map(m=>{
       const r=residentFor(m)||{};
       const info=dueInfo(m);
-      const rowClass=info.type==="overdue"?"due-overdue":info.type==="today"?"due-today":info.type==="soon"?"due-soon":"";
+      const rowClass=(info.type==="overdue"?"due-overdue":info.type==="today"?"due-today":info.type==="soon"?"due-soon":"")+(m.urgentFlag?" urgent-row":"");
       return `<tr class="${rowClass}">
         <td><strong>${esc(r.name||"Unknown")}</strong><br><span class="small">${esc(fmt(r.dob))}</span></td>
-        <td><strong>${esc(m.medication)}</strong><br><span class="small">${m.daysSupply?esc(m.daysSupply+" days supply"):""}</span></td>
+        <td><button class="med-link edit-med-name" data-id="${m.id}" type="button">${esc(m.medication)}</button><br><span class="small">${m.daysSupply?esc(m.daysSupply+" days supply"):""}</span><div class="quick-tags">${m.callFlag?'<span class="badge badge-soon" title="Call follow-up">☎</span>':''}${m.urgentFlag?'<span class="badge badge-overdue" title="Urgent flag">⚑</span>':''}</div></td>
         <td>Rx ${esc(m.rxNumber||"—")}<br><span class="small">${esc(r.pharmacy||"")}<br>${esc(r.phone||"")}</span></td>
         <td>${esc(fmt(m.lastOrderDate))}</td>
         <td>${m.status==="Active"
@@ -501,14 +568,19 @@ Data is stored only in this browser. Use Export Backup regularly. Do not save ba
           <button class="secondary edit-med" data-id="${m.id}" type="button">Edit / Log</button>
           ${m.status==="Active"
             ? `<button class="primary order-med" data-id="${m.id}" type="button">Ordered</button>`
-            : `<button class="success delivered-med" data-id="${m.id}" type="button">Delivered</button>`}
+            : `<button class="quick-tag icon-tag toggle-call ${m.callFlag?'active':''}" title="Call follow-up" aria-label="Call follow-up" data-id="${m.id}" type="button">☎</button>
+               <button class="quick-tag icon-tag toggle-urgent ${m.urgentFlag?'active':''}" title="Urgent flag" aria-label="Urgent flag" data-id="${m.id}" type="button">⚑</button>
+               <button class="success delivered-med" data-id="${m.id}" type="button">Delivered</button>`}
           <button class="danger delete-med" data-id="${m.id}" type="button">Delete</button>
         </div></td>
       </tr>`;
     }).join("");
 
     document.querySelectorAll(".edit-med").forEach(b=>b.addEventListener("click",()=>editMedication(b.dataset.id)));
+    document.querySelectorAll(".edit-med-name").forEach(b=>b.addEventListener("click",()=>editMedication(b.dataset.id)));
     document.querySelectorAll(".order-med").forEach(b=>b.addEventListener("click",()=>markOrdered(b.dataset.id)));
+    document.querySelectorAll(".toggle-call").forEach(b=>b.addEventListener("click",()=>toggleFlag(b.dataset.id,"callFlag")));
+    document.querySelectorAll(".toggle-urgent").forEach(b=>b.addEventListener("click",()=>toggleFlag(b.dataset.id,"urgentFlag")));
     document.querySelectorAll(".delivered-med").forEach(b=>b.addEventListener("click",()=>markDelivered(b.dataset.id)));
     document.querySelectorAll(".delete-med").forEach(b=>b.addEventListener("click",()=>deleteMedication(b.dataset.id)));
   }
@@ -576,7 +648,7 @@ Data is stored only in this browser. Use Export Backup regularly. Do not save ba
     $("medFormTitle").textContent="Add medication";
     $("patientSelect").value="";
     ["medication","rxNumber","lastOrderDate","orderPlacedDate","followUpDate","daysSupply","medNotes"].forEach(id=>$(id).value="");
-    $("reminderDays").value="25";$("status").value="Active";
+    $("reminderDays").value=data.settings.defaultReminderDays;$("status").value="Active";
     $("callLogText").value="";
     $("callLogPanel").classList.add("hidden");
     $("callLogList").innerHTML="";
@@ -599,6 +671,9 @@ Data is stored only in this browser. Use Export Backup regularly. Do not save ba
       orderPlacedDate:$("orderPlacedDate").value,
       followUpDate:$("followUpDate").value,
       callLogs: editingMedId ? (data.medications.find(m=>m.id===editingMedId)?.callLogs || []) : [],
+      paFlag: editingMedId ? Boolean(data.medications.find(m=>m.id===editingMedId)?.paFlag) : false,
+      callFlag: editingMedId ? Boolean(data.medications.find(m=>m.id===editingMedId)?.callFlag) : false,
+      urgentFlag: editingMedId ? Boolean(data.medications.find(m=>m.id===editingMedId)?.urgentFlag) : false,
       reminderDays,
       daysSupply:Number($("daysSupply").value||0),
       status:$("status").value,
@@ -696,9 +771,12 @@ Data is stored only in this browser. Use Export Backup regularly. Do not save ba
     saveData();renderAll();
   }
 
-  function setProgress(id){
+
+
+
+  function toggleFlag(id,key){
     const m=data.medications.find(x=>x.id===id);if(!m)return;
-    m.status="In progress";
+    m[key]=!m[key];
     saveData();renderAll();
   }
 
@@ -707,6 +785,9 @@ Data is stored only in this browser. Use Export Backup regularly. Do not save ba
     m.lastOrderDate=todayStr();
     m.orderPlacedDate="";
     m.followUpDate="";
+    m.paFlag=false;
+    m.callFlag=false;
+    m.urgentFlag=false;
     m.status="Active";
     saveData();renderAll();
   }
@@ -731,7 +812,11 @@ Data is stored only in this browser. Use Export Backup regularly. Do not save ba
         const imported=JSON.parse(reader.result);
         if(!imported||!Array.isArray(imported.residents)||!Array.isArray(imported.medications))throw new Error();
         if(!confirm(`Replace current data with ${imported.residents.length} residents and ${imported.medications.length} medications?`))return;
-        data=imported;saveData();clearResidentForm();clearMedForm();renderAll();
+        data=imported;
+        data.settings={defaultReminderDays:Number(data.settings?.defaultReminderDays||23)};
+        data.residents=(data.residents||[]).map(r=>({...r}));
+        data.medications=(data.medications||[]).map(m=>({...m,callLogs:Array.isArray(m.callLogs)?m.callLogs:[],paFlag:Boolean(m.paFlag),callFlag:Boolean(m.callFlag),urgentFlag:Boolean(m.urgentFlag)}));
+        saveData();clearResidentForm();clearMedForm();renderAll();
       }catch(e){alert("This backup file could not be read.");}
     };
     reader.readAsText(file);
@@ -751,14 +836,32 @@ Data is stored only in this browser. Use Export Backup regularly. Do not save ba
   $("importBtn").addEventListener("click",()=>$("importFile").click());
   $("importFile").addEventListener("change",e=>{if(e.target.files[0])importBackup(e.target.files[0]);e.target.value="";});
 
+  $("filterSelect").value="all";
   renderAll();
 })();
 </script>
 <script>
 if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => {
-    navigator.serviceWorker.register("service-worker.js").catch(() => {});
+  let waitingWorker=null;
+  const showUpdate=worker=>{
+    waitingWorker=worker;
+    document.getElementById("updateBanner")?.classList.add("show");
+  };
+  window.addEventListener("load", async () => {
+    try {
+      const registration=await navigator.serviceWorker.register("service-worker.js",{updateViaCache:"none"});
+      if(registration.waiting)showUpdate(registration.waiting);
+      registration.addEventListener("updatefound",()=>{
+        const worker=registration.installing;
+        worker?.addEventListener("statechange",()=>{
+          if(worker.state==="installed"&&navigator.serviceWorker.controller)showUpdate(worker);
+        });
+      });
+      setInterval(()=>registration.update(),60*60*1000);
+    } catch(e) {}
   });
+  navigator.serviceWorker.addEventListener("controllerchange",()=>window.location.reload());
+  document.getElementById("updateNowBtn")?.addEventListener("click",()=>waitingWorker?.postMessage({type:"SKIP_WAITING"}));
 }
 </script>
 </body>
