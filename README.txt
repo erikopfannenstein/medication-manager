@@ -1,4 +1,4 @@
-MEDICATION MANAGER PWA
+MEDICATION MANAGER
 
 GitHub Pages setup
 1. Create a new GitHub repository, for example: medication-manager
